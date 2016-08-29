@@ -231,7 +231,7 @@ class Amqp extends Component
             $queueName,
             isset($queue_config['consumerOptions']['consumer_tag']) ? $queue_config['consumerOptions']['consumer_tag'] : '',
             isset($queue_config['consumerOptions']['no_local']) ? $queue_config['consumerOptions']['no_local'] : false,
-            isset($queue_config['consumerOptions']['no_ack']) ? $queue_config['consumerOptions']['no_ack'] : true,
+            false, // no_ack
             isset($queue_config['consumerOptions']['exclusive']) ? $queue_config['consumerOptions']['exclusive'] : false,
             isset($queue_config['consumerOptions']['nowait']) ? $queue_config['consumerOptions']['nowait'] : false,
             $callback,

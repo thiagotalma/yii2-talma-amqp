@@ -23,6 +23,9 @@ class AmqpListenerController extends Controller
      */
     public $defaultAction = 'run';
 
+    /* @var boolean */
+    public $debug;
+
     /**
      * Interpreter classes for AMQP messages. This class will be used if interpreter class not set for queue.
      *
@@ -37,7 +40,7 @@ class AmqpListenerController extends Controller
     {
         return array_merge(
             parent::options($actionId),
-            ['exchange', 'queue']
+            ['exchange', 'queue', 'debug']
         );
     }
 
@@ -65,6 +68,7 @@ class AmqpListenerController extends Controller
             if (!$interpreter instanceof AmqpInterpreter) {
                 throw new Exception(sprintf("Class '%s' is not correct interpreter class.", $this->interpreters[$this->queue]));
             }
+            $interpreter->debug = $this->debug;
         } else {
             throw new Exception(sprintf("Interpreter class '%s' was not found.", $this->interpreters[$this->queue]));
         }
@@ -77,7 +81,9 @@ class AmqpListenerController extends Controller
                 'reply_to' => $msg->has('reply_to') ? $msg->get('reply_to') : null,
             ];
             try {
-                $interpreter->$method(Json::decode($msg->body, true), $info);
+                if ($interpreter->$method(Json::decode($msg->body, true), $info)) {
+                    $msg->delivery_info['channel']->basic_ack($msg->delivery_info['delivery_tag']);
+                }
             } catch (\Exception $exc) {
                 $errorInfo = "consumer fail:" . $exc->getMessage()
                     . PHP_EOL . "info:" . print_r($info, true)

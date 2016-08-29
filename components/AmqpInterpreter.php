@@ -12,6 +12,9 @@ class AmqpInterpreter
     const MESSAGE_INFO = 0;
     const MESSAGE_ERROR = 1;
 
+    /* @var boolean */
+    public $debug;
+
     /**
      * Logs info and error messages.
      *
@@ -22,5 +25,17 @@ class AmqpInterpreter
     {
         $format = [$type == self::MESSAGE_ERROR ? Console::FG_RED : Console::FG_BLUE];
         Console::stdout(Console::ansiFormat($message . PHP_EOL, $format));
+    }
+
+    /**
+     * Debug messages.
+     *
+     * @param $message
+     */
+    public function debug($message)
+    {
+        if ($this->debug) {
+            Console::stdout(Console::ansiFormat($message . PHP_EOL, [Console::FG_GREEN]));
+        }
     }
 }
