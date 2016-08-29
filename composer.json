@@ -1,0 +1,22 @@
+{
+    "name": "thiagotalma/yii2-amqp",
+    "description": "AMQP wrapper for Yii2",
+    "type": "yii2-extension",
+    "keywords": ["yii2","extension","amqp","rabbitmq"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Thiago Talma",
+            "email": "thiago@thiagomt.com"
+        }
+    ],
+    "require": {
+        "yiisoft/yii2": "*",
+        "php-amqplib/php-amqplib": "~2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "talma\\amqp\\": ""
+        }
+    }
+}
