@@ -73,6 +73,7 @@ class Amqp extends Component
         if (empty($this->user)) {
             throw new Exception("Parameter 'user' was not set for AMQP connection.");
         }
+
         if (empty(self::$ampqConnection)) {
             self::$ampqConnection = new AMQPStreamConnection(
                 $this->host,
@@ -123,7 +124,7 @@ class Amqp extends Component
             isset($config['options']['type']) ? $config['options']['type'] : $type,
             isset($config['options']['passive']) ? $config['options']['passive'] : false,
             isset($config['options']['durable']) ? $config['options']['durable'] : true,
-            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : true
+            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : false
         );
     }
 
@@ -140,7 +141,7 @@ class Amqp extends Component
             isset($config['options']['passive']) ? $config['options']['passive'] : false,
             isset($config['options']['durable']) ? $config['options']['durable'] : true,
             isset($config['options']['exclusive']) ? $config['options']['exclusive'] : false,
-            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : true,
+            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : false,
             isset($config['options']['nowait']) ? $config['options']['nowait'] : false,
             isset($config['arguments']) ? $config['arguments'] : null
         );
@@ -207,36 +208,49 @@ class Amqp extends Component
      *
      * @param string $queue
      * @param callable $callback
+     * @param string $consumerTag
      *
      * @throws Exception
      */
-    public function listen($queue, $callback)
+    public function listen($queue, $callback, $consumerTag = '')
     {
         if (!key_exists($queue, $this->queue_configs)) {
             throw new Exception('amqp queue: ' . $queue . ' no found.');
         }
 
-        $queue_config = $this->queue_configs[$queue];
+        $queueConfig = $this->queue_configs[$queue];
         $queueName = $this->queue_declare($queue);
 
-        foreach ($queue_config['binds'] as $routing_key => $exchange) {
+        foreach ($queueConfig['binds'] as $routingKey => $exchange) {
             if (!key_exists($exchange, $this->exchange_configs)) {
                 throw new Exception('amqp exchange: ' . $exchange . ' no found.');
             }
             $this->exchange_declare($exchange);
-            $this->channel->queue_bind($queueName, $exchange, $routing_key, false);
+            $this->channel->queue_bind($queueName, $exchange, $routingKey, false);
         }
+
+        $config = array_merge([
+            'no_local' => false,
+            'no_ack' => false,
+            'exclusive' => false,
+            'nowait' => false,
+            'callback' => $callback,
+            'ticket' => null,
+            'argument' => [
+                'x-cancel-on-ha-failover' => ['t', true] // fail over to another node
+            ]
+        ], (isset($queueConfig['consumerOptions']) ? $queueConfig['consumerOptions'] : []));
 
         $this->channel->basic_consume(
             $queueName,
-            isset($queue_config['consumerOptions']['consumer_tag']) ? $queue_config['consumerOptions']['consumer_tag'] : '',
-            isset($queue_config['consumerOptions']['no_local']) ? $queue_config['consumerOptions']['no_local'] : false,
-            false, // no_ack
-            isset($queue_config['consumerOptions']['exclusive']) ? $queue_config['consumerOptions']['exclusive'] : true,
-            isset($queue_config['consumerOptions']['nowait']) ? $queue_config['consumerOptions']['nowait'] : false,
-            $callback,
-            isset($queue_config['consumerOptions']['ticket']) ? $queue_config['consumerOptions']['ticket'] : null,
-            isset($queue_config['consumerOptions']['argument']) ? $queue_config['consumerOptions']['argument'] : null
+            $consumerTag,
+            $config['no_local'],
+            $config['no_ack'],
+            $config['exclusive'],
+            $config['nowait'],
+            $config['callback'],
+            $config['ticket'],
+            $config['argument']
         );
 
         register_shutdown_function(function (AMQPChannel $channel, AMQPStreamConnection $connection) {
@@ -244,9 +258,11 @@ class Amqp extends Component
             $connection->close();
         }, $this->channel, $this->connection);
 
+        \Yii::trace('Enter Wait', __METHOD__);
         while (count($this->channel->callbacks)) {
             $this->channel->wait();
         }
+        \Yii::trace('Exit', __METHOD__);
     }
 
     /**

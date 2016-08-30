@@ -36,6 +36,13 @@ class AmqpListenerController extends Controller
     public $interpreters = [];
 
     /**
+     * Consumer tag
+     *
+     * @var string
+     */
+    protected $consumerTag = 'consumer';
+
+    /**
      * @inheritdoc
      */
     public function options($actionId)
@@ -51,7 +58,7 @@ class AmqpListenerController extends Controller
      */
     public function actionRun()
     {
-        $this->amqp->listen($this->queue, [$this, 'callback']);
+        $this->amqp->listen($this->queue, [$this, 'callback'], $this->consumerTag);
     }
 
     /**
@@ -71,6 +78,20 @@ class AmqpListenerController extends Controller
 
         if (!$this->interpreter) {
             $this->interpreter = new AmqpInterpreter();
+        }
+
+        if (extension_loaded('pcntl')) {
+            define('AMQP_WITHOUT_SIGNALS', false);
+            pcntl_signal(SIGTERM, [$this, 'signalHandler']);
+            pcntl_signal(SIGHUP, [$this, 'signalHandler']);
+            pcntl_signal(SIGINT, [$this, 'signalHandler']);
+            pcntl_signal(SIGQUIT, [$this, 'signalHandler']);
+            pcntl_signal(SIGUSR1, [$this, 'signalHandler']);
+            pcntl_signal(SIGUSR2, [$this, 'signalHandler']);
+            pcntl_signal(SIGALRM, [$this, 'alarmHandler']);
+        } else {
+            echo 'Unable to process signals.' . PHP_EOL;
+            exit(1);
         }
     }
 
@@ -158,5 +179,95 @@ class AmqpListenerController extends Controller
         \Yii::$app->log->logger->flush(true);
 
         $this->interpreter->log($errorInfo, AmqpInterpreter::MESSAGE_ERROR);
+    }
+
+    /**
+     * Signal handler
+     *
+     * @param  int $signalNumber
+     *
+     * @return void
+     */
+    public function signalHandler($signalNumber)
+    {
+        echo 'Handling signal: #' . $signalNumber . PHP_EOL;
+        switch ($signalNumber) {
+            case SIGTERM:  // 15 : supervisor default stop
+            case SIGQUIT:  // 3  : kill -s QUIT
+                $this->stopHard();
+                break;
+            case SIGINT:   // 2  : ctrl+c
+                $this->stop();
+                break;
+            case SIGHUP:   // 1  : kill -s HUP
+                $this->restart();
+                break;
+            case SIGUSR1:  // 10 : kill -s USR1
+                // send an alarm in 1 second
+                pcntl_alarm(1);
+                break;
+            case SIGUSR2:  // 12 : kill -s USR2
+                // send an alarm in 10 seconds
+                pcntl_alarm(10);
+                break;
+            default:
+                break;
+        }
+
+        return;
+    }
+
+    /**
+     * Alarm handler
+     *
+     * @param  int $signalNumber
+     *
+     * @return void
+     */
+    public function alarmHandler($signalNumber)
+    {
+        echo 'Handling alarm: #' . $signalNumber . PHP_EOL;
+        echo memory_get_usage(true) . PHP_EOL;
+
+        return;
+    }
+
+    /**
+     * Restart the consumer on an existing connection
+     */
+    public function restart()
+    {
+        echo 'Restarting consumer.' . PHP_EOL;
+        $this->stopSoft();
+        $this->amqp->listen($this->queue, [$this, 'callback']);
+    }
+
+    /**
+     * Close the connection to the server
+     */
+    public function stopHard()
+    {
+        echo 'Stopping consumer by closing connection.' . PHP_EOL;
+        $this->amqp->connection->close();
+    }
+
+    /**
+     * Close the channel to the server
+     */
+    public function stopSoft()
+    {
+        echo 'Stopping consumer by closing channel.' . PHP_EOL;
+        $this->amqp->channel->close();
+    }
+
+    /**
+     * Tell the server you are going to stop consuming
+     * It will finish up the last message and not send you any more
+     */
+    public function stop()
+    {
+        echo 'Stopping consumer by cancel command.' . PHP_EOL;
+        // this gets stuck and will not exit without the last two parameters set
+        $this->amqp->channel->basic_cancel($this->consumerTag, false, true);
     }
 }
