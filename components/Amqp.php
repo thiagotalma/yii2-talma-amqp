@@ -232,19 +232,21 @@ class Amqp extends Component
             isset($queue_config['consumerOptions']['consumer_tag']) ? $queue_config['consumerOptions']['consumer_tag'] : '',
             isset($queue_config['consumerOptions']['no_local']) ? $queue_config['consumerOptions']['no_local'] : false,
             false, // no_ack
-            isset($queue_config['consumerOptions']['exclusive']) ? $queue_config['consumerOptions']['exclusive'] : false,
+            isset($queue_config['consumerOptions']['exclusive']) ? $queue_config['consumerOptions']['exclusive'] : true,
             isset($queue_config['consumerOptions']['nowait']) ? $queue_config['consumerOptions']['nowait'] : false,
             $callback,
             isset($queue_config['consumerOptions']['ticket']) ? $queue_config['consumerOptions']['ticket'] : null,
             isset($queue_config['consumerOptions']['argument']) ? $queue_config['consumerOptions']['argument'] : null
         );
 
+        register_shutdown_function(function (AMQPChannel $channel, AMQPStreamConnection $connection) {
+            $channel->close();
+            $connection->close();
+        }, $this->channel, $this->connection);
+
         while (count($this->channel->callbacks)) {
             $this->channel->wait();
         }
-
-        $this->channel->close();
-        $this->connection->close();
     }
 
     /**

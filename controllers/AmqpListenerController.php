@@ -7,7 +7,6 @@ use talma\amqp\components\AmqpInterpreter;
 use talma\amqp\components\AmqpTrait;
 use yii\console\Controller;
 use yii\console\Exception;
-use yii\helpers\Console;
 use yii\helpers\Inflector;
 use yii\helpers\Json;
 
@@ -25,6 +24,9 @@ class AmqpListenerController extends Controller
 
     /* @var boolean */
     public $debug;
+
+    /* @var AmqpInterpreter */
+    protected $interpreter;
 
     /**
      * Interpreter classes for AMQP messages. This class will be used if interpreter class not set for queue.
@@ -53,64 +55,103 @@ class AmqpListenerController extends Controller
     }
 
     /**
+     * @inheritDoc
+     */
+    public function init()
+    {
+        parent::init();
+
+        if (class_exists($this->interpreters[$this->queue])) {
+            $instance = new $this->interpreters[$this->queue];
+            if ($instance instanceof AmqpInterpreter) {
+                $instance->debug = $this->debug;
+                $this->interpreter = $instance;
+            }
+        }
+
+        if (!$this->interpreter) {
+            $this->interpreter = new AmqpInterpreter();
+        }
+    }
+
+    /**
      * @param AMQPMessage $msg
      *
      * @throws Exception
      */
     public function callback(AMQPMessage $msg)
     {
-        $routingKey = $msg->delivery_info['routing_key'];
+        $exchange = $msg->get('exchange');
+        $routingKey = $msg->get('routing_key');
+        $channel = $msg->get('channel');
+        $deliveryTag = $msg->get('delivery_tag');
+
+        // Send a message with the string "quit" to cancel the consumer.
+        if ($msg->body === 'quit') {
+            $channel->basic_cancel($msg->delivery_info['consumer_tag']);
+
+            return;
+        }
+
         $method = 'read' . Inflector::camelize($routingKey);
-        if (!isset($this->interpreters[$this->queue])) {
-            $interpreter = $this;
-        } elseif (class_exists($this->interpreters[$this->queue])) {
-            $interpreter = new $this->interpreters[$this->queue];
-            if (!$interpreter instanceof AmqpInterpreter) {
-                throw new Exception(sprintf("Class '%s' is not correct interpreter class.", $this->interpreters[$this->queue]));
-            }
-            $interpreter->debug = $this->debug;
-        } else {
-            throw new Exception(sprintf("Interpreter class '%s' was not found.", $this->interpreters[$this->queue]));
+        $msgBody = null;
+
+        try {
+            $msgBody = Json::decode($msg->body, true);
+        } catch (\Exception $e) {
+            $errorInfo = 'Invalid or malformed JSON.' . PHP_EOL . $e->getMessage();
+            $this->fail($errorInfo, __METHOD__, $e);
         }
 
-        if (method_exists($interpreter, $method)) {
-            $info = [
-                'exchange' => $msg->get('exchange'),
-                'queue' => $this->queue,
-                'routing_key' => $msg->get('routing_key'),
-                'reply_to' => $msg->has('reply_to') ? $msg->get('reply_to') : null,
-            ];
-            try {
-                if ($interpreter->$method(Json::decode($msg->body, true), $info)) {
-                    $msg->delivery_info['channel']->basic_ack($msg->delivery_info['delivery_tag']);
+        if (method_exists($this->interpreter, $method)) {
+            if ($msgBody) {
+                $info = [
+                    'exchange' => $exchange,
+                    'queue' => $this->queue,
+                    'routing_key' => $routingKey,
+                    'reply_to' => $msg->has('reply_to') ? $msg->get('reply_to') : null,
+                ];
+
+                try {
+                    if ($this->interpreter->$method($msgBody, $info)) {
+                        $channel->basic_ack($deliveryTag);
+                    } else {
+                        $channel->basic_nack($deliveryTag);
+                    }
+                } catch (\Exception $exc) {
+                    $errorInfo = "consumer fail:" . $exc->getMessage()
+                        . PHP_EOL . "info:" . print_r($info, true)
+                        . PHP_EOL . "body:" . PHP_EOL . print_r($msg->body, true);
+                    $this->fail($errorInfo, __METHOD__, $exc);
                 }
-            } catch (\Exception $exc) {
-                $errorInfo = "consumer fail:" . $exc->getMessage()
-                    . PHP_EOL . "info:" . print_r($info, true)
-                    . PHP_EOL . "body:" . PHP_EOL . print_r($msg->body, true)
-                    . PHP_EOL . $exc->getTraceAsString();
-                \Yii::warning($errorInfo, __METHOD__);
-                $format = [Console::FG_RED];
-                Console::stdout(Console::ansiFormat($errorInfo . PHP_EOL, $format));
-                Console::stdout(Console::ansiFormat($exc->getTraceAsString() . PHP_EOL, $format));
             }
         } else {
-            if (!isset($this->interpreters[$this->queue])) {
-                $interpreter = new AmqpInterpreter();
-            }
-            $errorInfo = "Unknown routing key '$routingKey' for exchange '$this->queue'.";
-            $errorInfo .= PHP_EOL . $msg->body;
-            \Yii::warning($errorInfo, __METHOD__);
+            $errorInfo = "Unknown routing key '$routingKey'.";
+            $errorInfo .= PHP_EOL . 'Interpreter: ' . get_class($this->interpreter);
+            $errorInfo .= PHP_EOL . 'Exchange: ' . $exchange;
+            $errorInfo .= PHP_EOL . 'Queue: ' . $this->queue;
+            $errorInfo .= PHP_EOL . 'Body: ' . $msg->body;
 
-            $interpreter->log(
-                sprintf("Unknown routing key '%s' for exchange '%s'.", $routingKey, $this->queue),
-                $interpreter::MESSAGE_ERROR
-            );
-            // debug the message
-            $interpreter->log(
-                print_r(Json::decode($msg->body, true), true),
-                $interpreter::MESSAGE_INFO
-            );
+            $this->fail($errorInfo, __METHOD__);
         }
+
+        $this->interpreter->debug(print_r($msgBody, true));
+    }
+
+    /**
+     * @param $errorInfo
+     * @param $method
+     * @param $exception Exception
+     */
+    protected function fail($errorInfo, $method, $exception = null)
+    {
+        if ($exception) {
+            $errorInfo .= PHP_EOL . $exception->getTraceAsString() . PHP_EOL;
+        }
+
+        \Yii::warning($errorInfo, $method);
+        \Yii::$app->log->logger->flush(true);
+
+        $this->interpreter->log($errorInfo, AmqpInterpreter::MESSAGE_ERROR);
     }
 }

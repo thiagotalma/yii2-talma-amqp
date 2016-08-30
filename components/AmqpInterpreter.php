@@ -24,7 +24,7 @@ class AmqpInterpreter
     public static function log($message, $type = self::MESSAGE_INFO)
     {
         $format = [$type == self::MESSAGE_ERROR ? Console::FG_RED : Console::FG_BLUE];
-        Console::stdout(Console::ansiFormat($message . PHP_EOL, $format));
+        Console::stdout(Console::ansiFormat(date('Y-m-d H:i:s') . PHP_EOL . $message . PHP_EOL, $format));
     }
 
     /**
