@@ -105,6 +105,7 @@ class AmqpListenerController extends Controller
 
         if (method_exists($this->interpreter, $method)) {
             if ($msgBody) {
+                $ack = false;
                 $info = [
                     'exchange' => $exchange,
                     'queue' => $this->queue,
@@ -113,16 +114,20 @@ class AmqpListenerController extends Controller
                 ];
 
                 try {
-                    if ($this->interpreter->$method($msgBody, $info)) {
+                    // Do the Job
+                    $ack = $this->interpreter->$method($msgBody, $info);
+                    if ($ack) {
                         $channel->basic_ack($deliveryTag);
-                    } else {
-                        $channel->basic_nack($deliveryTag);
                     }
                 } catch (\Exception $exc) {
                     $errorInfo = "consumer fail:" . $exc->getMessage()
                         . PHP_EOL . "info:" . print_r($info, true)
                         . PHP_EOL . "body:" . PHP_EOL . print_r($msg->body, true);
                     $this->fail($errorInfo, __METHOD__, $exc);
+                }
+
+                if (!$ack) {
+                    $channel->basic_nack($deliveryTag);
                 }
             }
         } else {
