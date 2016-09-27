@@ -301,7 +301,8 @@ class Amqp extends Component
      */
     public static function log($exchange, $routingKey, AMQPMessage $message, $method, $extra = [])
     {
-        $log = \Yii::$app->getLog();
+        /** @var \yii\log\Dispatcher $log */
+        $log = \Yii::createObject('yii\log\Dispatcher');
         $log->targets[] = new AmqpLog();
         $arr = [
             'exchange' => $exchange,
@@ -314,7 +315,7 @@ class Amqp extends Component
         if ($extra !== []) {
             $arr['extra'] = $extra;
         }
-        
+
         \Yii::info(json_encode($arr), self::LOG_CATEGORY);
     }
 }
