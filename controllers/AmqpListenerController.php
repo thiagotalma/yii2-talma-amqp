@@ -3,6 +3,7 @@
 namespace talma\amqp\controllers;
 
 use PhpAmqpLib\Message\AMQPMessage;
+use talma\amqp\components\Amqp;
 use talma\amqp\components\AmqpInterpreter;
 use talma\amqp\components\AmqpTrait;
 use yii\console\Controller;
@@ -140,6 +141,7 @@ class AmqpListenerController extends Controller
                     if ($ack) {
                         $channel->basic_ack($deliveryTag);
                     }
+                    Amqp::log($exchange, $routingKey, $msg, __METHOD__, ['result' => $ack ? 'success' : 'error']);
                 } catch (\Exception $exc) {
                     $errorInfo = "consumer fail:" . $exc->getMessage()
                         . PHP_EOL . "info:" . print_r($info, true)

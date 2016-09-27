@@ -18,6 +18,8 @@ use yii\helpers\Json;
  */
 class Amqp extends Component
 {
+    const LOG_CATEGORY = 'AMQP';
+
     const TYPE_TOPIC = 'topic';
     const TYPE_DIRECT = 'direct';
     const TYPE_HEADERS = 'headers';
@@ -166,6 +168,7 @@ class Amqp extends Component
             $this->exchange_declare($exchange, $type);
         }
         $this->channel->basic_publish($message, $exchange, $routing_key);
+        self::log($exchange, $routing_key, $message, __METHOD__);
     }
 
     /**
@@ -195,6 +198,7 @@ class Amqp extends Component
 
         $this->channel->basic_consume($queueName, '', false, false, false, false, $callback);
         $this->channel->basic_publish($message, $exchange, $routing_key);
+        self::log($exchange, $routing_key, $message, __METHOD__);
         while (!$response) {
             // exception will be thrown on timeout
             $this->channel->wait(null, false, $timeout);
@@ -283,6 +287,34 @@ class Amqp extends Component
             $message = Json::encode($message);
         }
 
+        $properties['message_id'] = uniqid('amqp_', true);
+
         return new AMQPMessage($message, $properties);
+    }
+
+    /**
+     * @param $exchange
+     * @param $routingKey
+     * @param AMQPMessage $message
+     * @param $method
+     * @param array $extra
+     */
+    public static function log($exchange, $routingKey, AMQPMessage $message, $method, $extra = [])
+    {
+        $log = \Yii::$app->getLog();
+        $log->targets[] = new AmqpLog();
+        $arr = [
+            'exchange' => $exchange,
+            'routing_key' => $routingKey,
+            'message' => $message->body,
+            'messageProperties' => $message->get_properties(),
+            'method' => $method
+        ];
+
+        if ($extra !== []) {
+            $arr['extra'] = $extra;
+        }
+        
+        \Yii::info(json_encode($arr), self::LOG_CATEGORY);
     }
 }
