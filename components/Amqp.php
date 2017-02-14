@@ -126,7 +126,11 @@ class Amqp extends Component
             isset($config['options']['type']) ? $config['options']['type'] : $type,
             isset($config['options']['passive']) ? $config['options']['passive'] : false,
             isset($config['options']['durable']) ? $config['options']['durable'] : true,
-            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : false
+            isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : false,
+            isset($config['options']['internal']) ? $config['options']['internal'] : false,
+            isset($config['options']['nowait']) ? $config['options']['nowait'] : false,
+            isset($config['options']['arguments']) ? $config['options']['arguments'] : null,
+            isset($config['options']['ticket']) ? $config['options']['ticket'] : null
         );
     }
 
@@ -145,7 +149,8 @@ class Amqp extends Component
             isset($config['options']['exclusive']) ? $config['options']['exclusive'] : false,
             isset($config['options']['auto_delete']) ? $config['options']['auto_delete'] : false,
             isset($config['options']['nowait']) ? $config['options']['nowait'] : false,
-            isset($config['arguments']) ? $config['arguments'] : null
+            isset($config['options']['arguments']) ? $config['options']['arguments'] : null,
+            isset($config['options']['ticket']) ? $config['options']['ticket'] : null
         );
 
         return $queueName;
