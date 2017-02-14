@@ -85,7 +85,23 @@ trait AmqpTrait
     {
         $this->amqp->send($exchange ?: $this->exchange, $routing_key, $message, $type);
     }
-
+    
+    /**
+     * @param $routing_key
+     * @param array $message
+     * @param $exchange
+     * @param int $delay time in milliseconds
+     *
+     * @return void
+     */
+    public function sendDelay($routing_key, $message, $exchange, $delay)
+    {
+        $headers = new AMQPTable(['x-delay' => $delay]);
+        $amqpMessage = new AMQPMessage(Json::encode($message));
+        $amqpMessage->set('application_headers', $headers);
+        $this->amqp->channel->basic_publish($amqpMessage, $exchange, $routing_key);
+    }
+    
     /**
      * Sends message to the exchange and waits for answer.
      *
